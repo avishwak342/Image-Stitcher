@@ -84,4 +84,4 @@ def cacheClear():
     return redirect('/')
 
 if __name__ == '__main__':
-    server.run(threaded=True, port=5000)
+    server.run(host='0.0.0.0',debug=True, port=3000)
