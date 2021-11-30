@@ -3,6 +3,7 @@ import cv2 as cv
 from flask.helpers import flash
 import numpy as ny
 import imutils
+from PIL import Image as Img
 
 # constants
 NFEATURES = 2000
@@ -13,15 +14,14 @@ def ImageLoader():
     images_dir = o.path.join(cwd, 'images')
     # load files from images folder
     files = o.listdir(images_dir)
-    loadedImages = []
+    loadedImgs = []
     # loop through path in files
     for path in files:
-        loadedImages.append(cv.imread(o.path.join(cwd, 'images', path)))
-    # images should only2
-    if (len(loadedImages) == 2):
-        img1 = loadedImages[0]
-        img2 = loadedImages[1]
-        # flash('process - images loaded')
+        loadedImgs.append(cv.imread(o.path.join(cwd, 'images', path)))
+    # images should only 2
+    if (len(loadedImgs) == 2):
+        img1 = loadedImgs[0]
+        img2 = loadedImgs[1]
     else:
         raise Exception("invalid number of images")
 
@@ -97,87 +97,104 @@ def ProduceImages(imgOne, imgTwo, h):
     # flash('process - raw images merged')
     return opImg
 
+def ProduceNonMatchingImages():
+    dirImg = o.path.join(o.getcwd(), 'images')
+    imgFiles = o.listdir(dirImg)
+    imgsLoaded = []
+    # loop through path in files
+    for path in imgFiles:
+        imgsLoaded.append(Img.open(o.path.join(o.getcwd(), 'images', path)))
 
-def start():
-    img1, img2, img1Gray, img2Gray = ImageLoader()
-    # print(img1.shape, img2.shape, img2Gray.shape, img1Gray.shape)
+    i1 = imgsLoaded[0]
+    i2 = imgsLoaded[1]
+    (wd1, ht1) = i1.size
+    (wd2, ht2) = i2.size
 
-    keyPts1, descr1, keyPts2, descr2 = DescriberAndDetector(img1, img2)
+    wdRes = wd1 + wd2
+    htRes = max(ht1, ht2)
+
+    Ires = Img.new('RGB', (wdRes, htRes))
+    Ires.paste(im=i1, box=(0, 0))
+    Ires.paste(im=i2, box=(wd1, 0))
+    Ires.save('results/final.png')
+    return Ires
+
+def pStart():
+    i1, i2, i1Gray, i2Gray = ImageLoader()
+
+    kp1, dsc1, kp2, dsc2 = DescriberAndDetector(i1, i2)
 
     matcher = Matcher()
 
-    mtchs = FindMatchingPoints(matcher, descr1, descr2)
+    mtchs = FindMatchingPoints(matcher, dsc1, dsc2)
 
-    # find matches
-    allMatches = []
+    mtchsFull = []
     for m, n in mtchs:
-        allMatches.append(m)
+        mtchsFull.append(m)
 
-    opImg1 = EstablishMatches(img1Gray, keyPts1, img2Gray, keyPts2,
-                              allMatches[:30])
+    opImg1 = EstablishMatches(i1Gray, kp1, i2Gray, kp2,
+                              mtchsFull[:30])
 
     cv.imwrite('results/1matching.png', opImg1)
 
-    # find better matches
-    best = []
-    for j, k in mtchs:
-        if j.distance < 0.6 * k.distance:
-            best.append(j)
+    bt1 = []
+    for l, m in mtchs:
+        if l.distance < 0.7 * m.distance:
+            bt1.append(l)
 
-    #Match Condition
-    COUNT = 30
+    if len(bt1) == 0:
+        ProduceNonMatchingImages()
+        return
 
-    if len(best) > COUNT:
-        # Homography arguments
-        srcPts = ny.float32([keyPts1[m.queryIdx].pt
-                             for m in best]).reshape(-1, 1, 2)
-        dstPts = ny.float32([keyPts2[m.trainIdx].pt
-                             for m in best]).reshape(-1, 1, 2)
+    COUNT1 = 30
 
-        # Establish a homography
-        M, _ = cv.findHomography(srcPts, dstPts, cv.RANSAC, 5.0)
+    if len(bt1) > COUNT1:
+        sPts = ny.float32([kp1[m.queryIdx].pt
+                             for m in bt1]).reshape(-1, 1, 2)
+        dPts = ny.float32([kp2[m.trainIdx].pt
+                             for m in bt1]).reshape(-1, 1, 2)
 
-        opImg2 = ProduceImages(img2, img1, M)
+        MM, _ = cv.findHomography(sPts, dPts, cv.RANSAC, 5.0)
+
+        opImg2 = ProduceImages(i2, i1, MM)
 
         cv.imwrite('results/2result.png', opImg2)
         
-        # flash('process - post processing the merged image')
-        stitchedImg = cv.copyMakeBorder(opImg2, 10, 10, 10, 10,
+        stitdImg = cv.copyMakeBorder(opImg2, 10, 10, 10, 10,
                                          cv.BORDER_CONSTANT, (0, 0, 0))
-        stitchedGray = cv.cvtColor(stitchedImg, cv.COLOR_BGR2GRAY)
-        thresholdImg = cv.threshold(stitchedGray, 0, 255,
+        stitdGray = cv.cvtColor(stitdImg, cv.COLOR_BGR2GRAY)
+        thresdImg = cv.threshold(stitdGray, 0, 255,
                                      cv.THRESH_BINARY)[1]
 
-        cv.imwrite('results/3threshold.png', thresholdImg)
+        cv.imwrite('results/3threshold.png', thresdImg)
 
-        cntrs = cv.findContours(thresholdImg.copy(), cv.RETR_EXTERNAL,
+        cntrs = cv.findContours(thresdImg.copy(), cv.RETR_EXTERNAL,
                                  cv.CHAIN_APPROX_SIMPLE)
 
         cntrs = imutils.grab_contours(cntrs)
-        areaOne = max(cntrs, key=cv.contourArea)
+        AreaOne = max(cntrs, key=cv.contourArea)
 
-        mask = ny.zeros(thresholdImg.shape, dtype='uint8')
-        x, y, w, h = cv.boundingRect(areaOne)
-        cv.rectangle(mask, (x, y), (x + w, y + h), 255, -1)
+        mask = ny.zeros(thresdImg.shape, dtype='uint8')
+        x1, y1, w1, h1 = cv.boundingRect(AreaOne)
+        cv.rectangle(mask, (x1, y1), (x1 + w1, y1 + h1), 255, -1)
 
-        minRect = mask.copy()
+        rectMin = mask.copy()
         sub = mask.copy()
 
         while cv.countNonZero(sub) > 0:
-            minRect = cv.erode(minRect, None)
-            sub = cv.subtract(minRect, thresholdImg)
+            rectMin = cv.erode(rectMin, None)
+            sub = cv.subtract(rectMin, thresdImg)
 
-        cntrs = cv.findContours(minRect.copy(), cv.RETR_EXTERNAL,
+        cntrs = cv.findContours(rectMin.copy(), cv.RETR_EXTERNAL,
                                  cv.CHAIN_APPROX_SIMPLE)
 
         cntrs = imutils.grab_contours(cntrs)
-        areaTwo = max(cntrs, key=cv.contourArea)
+        AreaTwo = max(cntrs, key=cv.contourArea)
 
-        cv.imwrite("results/4minrect.png", minRect)
+        cv.imwrite("results/4minrect.png", rectMin)
 
-        x, y, w, h = cv.boundingRect(areaTwo)
+        x2, y2, w2, h2 = cv.boundingRect(AreaTwo)
 
-        stitchedImg = stitchedImg[y:y + h, x:x + w]
+        stitdImg = stitdImg[y2:y2 + h2, x2:x2 + w2]
 
-        # flash('process - panaroma finished')
-        cv.imwrite('results/final.png', stitchedImg)
+        cv.imwrite('results/stitfinal.png', stitdImg)
