@@ -116,7 +116,7 @@ def ProduceNonMatchingImages():
     Ires = Img.new('RGB', (wdRes, htRes))
     Ires.paste(im=i1, box=(0, 0))
     Ires.paste(im=i2, box=(wd1, 0))
-    Ires.save('results/final.png')
+    Ires.save('results/stitfinal.png')
     return Ires
 
 def pStart():
