@@ -142,7 +142,7 @@ def pStart():
         if l.distance < 0.7 * m.distance:
             bt1.append(l)
 
-    if len(bt1) == 0:
+    if len(bt1) <= 7:
         ProduceNonMatchingImages()
         return
 
